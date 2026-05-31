@@ -1,12 +1,11 @@
+import json
 import streamlit as st
 import torch
 import torch.nn as nn
-import pickle
 import numpy as np
 from PIL import Image
 from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
 from torchvision import transforms
-import cv2
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -17,7 +16,7 @@ st.set_page_config(
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 MODEL_PATH   = "face_skin_best.pth"
-ENCODER_PATH = "label_encoder.pkl"
+CLASSES_PATH = "classes.json"
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 class SkinConditionModel(nn.Module):
@@ -42,13 +41,14 @@ class SkinConditionModel(nn.Module):
 # ── Load model (cached so loads only once) ────────────────────────────────────
 @st.cache_resource
 def load_model():
-    with open(ENCODER_PATH, "rb") as f:
-        encoder = pickle.load(f)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model  = SkinConditionModel(out_classes=len(encoder.classes_)).to(device)
+    # Load classes from JSON — no pickle, no sklearn needed
+    with open(CLASSES_PATH, "r") as f:
+        classes = json.load(f)
+    device = torch.device("cpu")
+    model  = SkinConditionModel(out_classes=len(classes)).to(device)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
     model.eval()
-    return model, encoder, device
+    return model, classes, device
 
 # ── Transform ─────────────────────────────────────────────────────────────────
 transform = transforms.Compose([
@@ -59,29 +59,29 @@ transform = transforms.Compose([
 ])
 
 # ── Predict function ──────────────────────────────────────────────────────────
-def predict(image, model, encoder, device):
+def predict(image, model, classes, device):
     tensor = transform(image).unsqueeze(0).to(device)
     with torch.no_grad():
         outputs    = model(tensor)
         probs      = torch.softmax(outputs, dim=1)[0]
         confidence = probs.max().item() * 100
         pred_idx   = probs.argmax().item()
-    condition  = encoder.inverse_transform([pred_idx])[0]
-    all_probs  = {
-        encoder.inverse_transform([i])[0]: round(probs[i].item() * 100, 1)
-        for i in range(len(encoder.classes_))
+    condition = classes[pred_idx]
+    all_probs = {
+        classes[i]: round(probs[i].item() * 100, 1)
+        for i in range(len(classes))
     }
     return condition, round(confidence, 1), all_probs
 
 # ── Skin tips ─────────────────────────────────────────────────────────────────
 TIPS = {
-    "Pimples / Acne"               : "🧴 Use salicylic acid cleanser. Avoid touching face. Keep pillowcase clean.",
-    "Redness / Rosacea"            : "❄️ Use gentle fragrance-free products. Avoid hot water and spicy food.",
-    "Dryness / Dehydrated Skin"    : "💧 Use hyaluronic acid serum. Moisturize immediately after washing.",
+    "Pimples / Acne"                 : "🧴 Use salicylic acid cleanser. Avoid touching face. Keep pillowcase clean.",
+    "Redness / Rosacea"              : "❄️ Use gentle fragrance-free products. Avoid hot water and spicy food.",
+    "Dryness / Dehydrated Skin"      : "💧 Use hyaluronic acid serum. Moisturize immediately after washing.",
     "Hyperpigmentation / Black Spots": "☀️ Use SPF 50 daily. Try niacinamide or vitamin C serum.",
-    "Blackheads / Open Pores"      : "🫧 Use BHA exfoliant. Try clay mask weekly. Don't squeeze.",
-    "Whiteheads"                   : "✨ Use gentle retinol. Keep skin clean. Avoid heavy creams.",
-    "Under-eye Bags"               : "😴 Get enough sleep. Use cold compress. Try caffeine eye cream.",
+    "Blackheads / Open Pores"        : "🫧 Use BHA exfoliant. Try clay mask weekly. Don't squeeze.",
+    "Whiteheads"                     : "✨ Use gentle retinol. Keep skin clean. Avoid heavy creams.",
+    "Under-eye Bags"                 : "😴 Get enough sleep. Use cold compress. Try caffeine eye cream.",
 }
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -91,8 +91,8 @@ st.markdown("---")
 
 # Load model
 with st.spinner("Loading AI model..."):
-    model, encoder, device = load_model()
-st.success(f"✅ Model ready — {len(encoder.classes_)} skin conditions")
+    model, classes, device = load_model()
+st.success(f"✅ Model ready — {len(classes)} skin conditions")
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tab1, tab2 = st.tabs(["📁 Upload Photo", "📷 Live Camera"])
@@ -105,14 +105,13 @@ with tab1:
         type=["jpg", "jpeg", "png"],
         help="Upload a clear front-facing photo"
     )
-
     if uploaded:
         image = Image.open(uploaded).convert("RGB")
         st.image(image, caption="Uploaded Image", use_column_width=True)
 
         if st.button("🔍 Analyze Skin", key="upload_btn"):
             with st.spinner("Analyzing..."):
-                condition, confidence, all_probs = predict(image, model, encoder, device)
+                condition, confidence, all_probs = predict(image, model, classes, device)
 
             st.markdown("---")
             st.markdown(f"### Result: **{condition}**")
@@ -138,7 +137,7 @@ with tab2:
 
         if st.button("🔍 Analyze Skin", key="camera_btn"):
             with st.spinner("Analyzing..."):
-                condition, confidence, all_probs = predict(image, model, encoder, device)
+                condition, confidence, all_probs = predict(image, model, classes, device)
 
             st.markdown("---")
             st.markdown(f"### Result: **{condition}**")
