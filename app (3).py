@@ -7,7 +7,7 @@ from PIL import Image
 from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
 from torchvision import transforms
 
-# ── Page Config ───────────────────────────────────────────────────────────────
+# ── Page Config ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ShaeAI Skin Analyzer",
     page_icon="🧴",
