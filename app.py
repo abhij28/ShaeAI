@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
 from torchvision import transforms
-import cv2
+
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
